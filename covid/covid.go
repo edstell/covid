@@ -106,7 +106,7 @@ type pagination struct {
 }
 
 // Data returns a io.Reader for the fetched given the parameters provided.
-func (c *Client) GetData(ctx context.Context, structure json.Marshaler, format Format, areaType *AreaType, filters ...Filter) (io.Reader, error) {
+func (c *Client) GetData(ctx context.Context, structure json.Marshaler, format Format, areaType *AreaType, filters ...Filter) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/data", c.basepath), nil)
 	if err != nil {
 		return nil, err
@@ -129,14 +129,21 @@ func (c *Client) GetData(ctx context.Context, structure json.Marshaler, format F
 	if err != nil {
 		return nil, err
 	}
-	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		return nil, errors.New(res.Status)
 	}
-	body := &response{}
-	if err := json.NewDecoder(res.Body).Decode(body); err != nil {
-		return nil, err
+	switch format {
+	case FormatJSON:
+		body := &response{}
+		if err := json.NewDecoder(res.Body).Decode(body); err != nil {
+			return nil, err
+		}
+		res.Body.Close()
+		return io.NopCloser(bytes.NewBuffer(body.Data)), nil
+	case FormatCSV:
+		return res.Body, nil
+	default:
+		res.Body.Close()
+		return nil, fmt.Errorf("format '%s' is unsupported", format)
 	}
-	fmt.Printf("%+v\n", body.Pagination)
-	return bytes.NewBuffer(body.Data), nil
 }
